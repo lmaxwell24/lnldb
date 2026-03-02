@@ -1,8 +1,0 @@
-{{ string }}
-
-{% for event in events %}
-{{ event.event_name }} : {{ event.location }}
-
-{% endfor %}
-
-{{ stringtwo }}
