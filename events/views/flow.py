@@ -12,6 +12,7 @@ from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404, render
 from django.template.loader import render_to_string
 from django.urls.base import reverse
+from django import forms
 from django.utils import timezone
 from django.utils.text import slugify
 from django.views.generic import CreateView, DeleteView, UpdateView
@@ -28,11 +29,15 @@ from events.forms import (
                           MultiBillingUpdateForm, CCIForm, CrewAssign, EventApprovalForm,
                           EventDenialForm, EventReviewForm, ExtraForm, InternalReportForm, MKHoursForm,
                           BillingEmailForm, MultiBillingEmailForm, ServiceInstanceForm, WorkdayForm, CrewCheckinForm,
-                          CrewCheckoutForm, CheckoutHoursForm, BulkCheckinForm, EventOccurrenceForm
+                          CrewCheckoutForm, CheckoutHoursForm, BulkCheckinForm, EventOccurrenceForm,
+                          CrewChiefInterestForm, EventImageForm, ProductionTemplateForm, ProductionTemplateSectionForm, 
+                          EventProductionSectionForm, CreateProductionPlanForm
 )
 from events.models import (BaseEvent, Billing, MultiBilling, BillingEmail, MultiBillingEmail, Category, CCReport, Event,
                            Event2019, EventArbitrary, EventAttachment, EventCCInstance, ExtraInstance, Hours,
-                           ReportReminder, ServiceInstance, PostEventSurvey, CCR_DELTA, CrewAttendanceRecord, Rental, EventOccurrence)
+                           ReportReminder, ServiceInstance, PostEventSurvey, CCR_DELTA, CrewAttendanceRecord, Rental, EventOccurrence,
+                           CrewChiefInterest, EventImage, ProductionTemplate, ProductionTemplateSection,
+                           EventProductionPlan, EventProductionSection)
 from helpers.mixins import (ConditionalFormMixin, HasPermMixin, HasPermOrTestMixin,
                             LoginRequiredMixin, SetFormMsgMixin)
 from helpers.challenges import is_officer
@@ -1623,3 +1628,198 @@ def mark_entered_into_workday(request, id):
         event.save()
         messages.success(request, "Marked %s as entered into Workday." % event.event_name, extra_tags="success")
     return HttpResponseRedirect(reverse('events:awaitingworkday'))
+
+@login_required
+def express_interest(request, id):
+    """Allow a user to express interest in crew chiefing an event"""
+    event = get_object_or_404(BaseEvent, pk=id)
+    if not request.user.has_perm('events.can_chief_event'):
+        raise PermissionDenied
+    if event.closed or event.cancelled:
+        messages.add_message(request, messages.ERROR, 'This event is no longer accepting interest.')
+        return HttpResponseRedirect(reverse('events:detail', args=(event.id,)))
+
+    existing = CrewChiefInterest.objects.filter(event=event, user=request.user).first()
+
+    if request.method == 'POST':
+        form = CrewChiefInterestForm(request.POST, instance=existing, event=event)
+        if form.is_valid():
+            interest = form.save(commit=False)
+            interest.event = event
+            interest.user = request.user
+            interest.save()
+            form.save_m2m()
+            messages.add_message(request, messages.SUCCESS, 'Your interest has been recorded!')
+            return HttpResponseRedirect(reverse('events:detail', args=(event.id,)))
+    else:
+        form = CrewChiefInterestForm(instance=existing, event=event)
+
+    context = {
+        'form': form,
+        'event': event,
+        'existing': existing,
+        'msg': 'Express Interest in Crew Chiefing' if not existing else 'Update Your Interest',
+    }
+    return render(request, 'form_crispy.html', context)
+
+
+@login_required
+def remove_interest(request, id):
+    """Remove a user's interest in crew chiefing an event"""
+    event = get_object_or_404(BaseEvent, pk=id)
+    if request.method == 'POST':
+        CrewChiefInterest.objects.filter(event=event, user=request.user).delete()
+        messages.add_message(request, messages.SUCCESS, 'Your interest has been removed.')
+    return HttpResponseRedirect(reverse('events:detail', args=(event.id,)))
+
+
+@login_required
+def event_images(request, id):
+    """Manage images for an event"""
+    event = get_object_or_404(BaseEvent, pk=id)
+    if not (request.user.has_perm('events.event_images') or
+            request.user.has_perm('events.event_images', event)):
+        raise PermissionDenied
+    if event.closed:
+        messages.add_message(request, messages.ERROR, 'Event is closed.')
+        return HttpResponseRedirect(reverse('events:detail', args=(event.id,)))
+
+    mk_image_formset = inlineformset_factory(BaseEvent, EventImage, extra=2,
+                                              fields=['image', 'caption', 'display_order'])
+
+    if request.method == 'POST':
+        formset = mk_image_formset(request.POST, request.FILES, instance=event)
+        if formset.is_valid():
+            instances = formset.save(commit=False)
+            for instance in instances:
+                instance.uploaded_by = request.user
+                instance.save()
+            for obj in formset.deleted_objects:
+                obj.delete()
+            messages.add_message(request, messages.SUCCESS, 'Images updated.')
+            return HttpResponseRedirect(reverse('events:detail', args=(event.id,)))
+    else:
+        formset = mk_image_formset(instance=event)
+
+    context = {
+        'event': event,
+        'formset': formset,
+        'msg': 'Manage Event Images',
+    }
+    return render(request, 'formset_crispy_generic.html', context)
+
+
+@login_required
+def create_production_plan(request, id):
+    """Create a production plan for an event, optionally from a template"""
+    event = get_object_or_404(BaseEvent, pk=id)
+    if not (request.user.has_perm('events.edit_event_text') or
+            request.user.has_perm('events.edit_event_text', event)):
+        raise PermissionDenied
+
+    if hasattr(event, 'production_plan'):
+        return HttpResponseRedirect(reverse('events:edit-plan', args=(event.id,)))
+
+    if request.method == 'POST':
+        form = CreateProductionPlanForm(request.POST)
+        if form.is_valid():
+            template = form.cleaned_data.get('template')
+            plan = EventProductionPlan.objects.create(
+                event=event,
+                template=template,
+                created_by=request.user
+            )
+            if template:
+                for section in template.sections.all():
+                    EventProductionSection.objects.create(
+                        plan=plan,
+                        title=section.title,
+                        content=section.description or '',
+                        order=section.order
+                    )
+            else:
+                # Create a few default sections
+                defaults = [
+                    ('Overview', 'General event overview and goals', 0),
+                    ('Equipment List', 'Required equipment and gear', 1),
+                    ('Setup Plan', 'Setup sequence and timing', 2),
+                    ('Cue Sheet', 'Cues and transitions', 3),
+                    ('Teardown Notes', 'Teardown procedure and notes', 4),
+                ]
+                for title, content, order in defaults:
+                    EventProductionSection.objects.create(
+                        plan=plan, title=title, content=content, order=order
+                    )
+            messages.add_message(request, messages.SUCCESS, 'Production plan created.')
+            return HttpResponseRedirect(reverse('events:edit-plan', args=(event.id,)))
+    else:
+        form = CreateProductionPlanForm()
+
+    context = {
+        'form': form,
+        'event': event,
+        'msg': 'Create Production Plan',
+    }
+    return render(request, 'form_crispy.html', context)
+
+
+@login_required
+def edit_production_plan(request, id):
+    """Edit the production plan sections for an event"""
+    event = get_object_or_404(BaseEvent, pk=id)
+    if not hasattr(event, 'production_plan'):
+        return HttpResponseRedirect(reverse('events:create-plan', args=(event.id,)))
+
+    plan = event.production_plan
+    can_edit = (request.user.has_perm('events.edit_event_text') or
+                request.user.has_perm('events.edit_event_text', event) or
+                event.ccinstances.filter(crew_chief=request.user).exists())
+
+    if not can_edit and not request.user.has_perm('events.view_events'):
+        raise PermissionDenied
+
+    section_formset = inlineformset_factory(
+        EventProductionPlan, EventProductionSection,
+        fields=['title', 'content', 'order', 'completed'],
+        extra=1, can_delete=True,
+        widgets={'content': forms.Textarea(attrs={'rows': 6})}
+    )
+
+    if request.method == 'POST' and can_edit:
+        formset = section_formset(request.POST, instance=plan)
+        if formset.is_valid():
+            formset.save()
+            messages.add_message(request, messages.SUCCESS, 'Production plan updated.')
+            return HttpResponseRedirect(reverse('events:detail', args=(event.id,)))
+    else:
+        formset = section_formset(instance=plan)
+
+    context = {
+        'event': event,
+        'plan': plan,
+        'formset': formset,
+        'can_edit': can_edit,
+        'msg': 'Production Plan',
+    }
+    return render(request, 'production_plan.html', context)
+
+
+@login_required
+def view_production_plan(request, id):
+    """Read-only view of an event's production plan"""
+    event = get_object_or_404(BaseEvent, pk=id)
+    if not (request.user.has_perm('events.view_events') or
+            request.user.has_perm('events.view_events', event)):
+        raise PermissionDenied
+
+    if not hasattr(event, 'production_plan'):
+        messages.add_message(request, messages.INFO, 'No production plan exists for this event.')
+        return HttpResponseRedirect(reverse('events:detail', args=(event.id,)))
+
+    plan = event.production_plan
+    context = {
+        'event': event,
+        'plan': plan,
+        'sections': plan.sections.all(),
+    }
+    return render(request, 'production_plan_view.html', context)

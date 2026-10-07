@@ -1160,3 +1160,52 @@ class DeleteWorkshop(SetFormMsgMixin, LoginRequiredMixin, HasPermMixin, DeleteVi
 
     def get_success_url(self):
         return reverse('events:workshops:list')
+
+@login_required
+@permission_required('events.view_events', raise_exception=True)
+def event_pipeline(request):
+    """Dashboard view showing the event pipeline grouped by status"""
+    context = {}
+
+    # Get events grouped by status
+    statuses = ['Pre-Request', 'Prospective', 'Incoming', 'Confirmed']
+    pipeline = {}
+    for status in statuses:
+        events = BaseEvent.objects.filter(
+            event_status=status,
+            cancelled=False,
+            closed=False
+        ).select_related('location', 'location__building').prefetch_related(
+            'org', 'ccinstances', 'cc_interests'
+        ).order_by('datetime_start')
+
+        if not request.user.has_perm('events.view_hidden_event'):
+            events = events.filter(sensitive=False)
+        if not request.user.has_perm('events.view_test_event'):
+            events = events.filter(test_event=False)
+
+        pipeline[status] = events
+
+    context['pipeline'] = pipeline
+    context['status_list'] = statuses
+
+    # Summary stats
+    context['total_active'] = sum(qs.count() for qs in pipeline.values())
+    context['needs_cc'] = BaseEvent.objects.filter(
+        event_status__in=['Incoming', 'Confirmed'],
+        cancelled=False, closed=False
+    ).annotate(
+        num_ccs=Count('ccinstances')
+    ).filter(num_ccs=0).count()
+    context['needs_dates'] = BaseEvent.objects.filter(
+        event_status__in=statuses,
+        cancelled=False, closed=False,
+        datetime_start__isnull=True
+    ).count()
+    context['has_interest'] = BaseEvent.objects.filter(
+        event_status__in=statuses,
+        cancelled=False, closed=False,
+        cc_interests__isnull=False
+    ).distinct().count()
+
+    return render(request, 'event_pipeline.html', context)

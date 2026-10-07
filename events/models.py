@@ -242,15 +242,17 @@ class BaseEvent(PolymorphicModel):
     event_name = models.CharField(max_length=128, db_index=True)
     event_status = models.CharField(max_length=20, choices=settings.EVENT_STATUSES, default='Prospective')
     description = models.TextField(null=True, blank=True)
-    location = models.ForeignKey('Location', on_delete=models.PROTECT)
+    location = models.ForeignKey('Location', on_delete=models.PROTECT, null=True, blank=True)
     contact = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, verbose_name="Contact", related_name="contact")
     lnl_contact = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, verbose_name="LNL Contact", related_name="lnl_contact")
     org = models.ManyToManyField('Organization', blank=True, verbose_name="Client", related_name='events')
     billing_org = models.ForeignKey('Organization', on_delete=models.PROTECT, null=True, blank=True, related_name="billedevents")
+    parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.CASCADE, related_name='sub_events',
+                               help_text="Parent event for grouping sub-events into a series or hierarchy")
 
-    datetime_setup_complete = models.DateTimeField()
-    datetime_start = models.DateTimeField(db_index=True)
-    datetime_end = models.DateTimeField()
+    datetime_setup_complete = models.DateTimeField(null=True, blank=True)
+    datetime_start = models.DateTimeField(db_index=True, null=True, blank=True)
+    datetime_end = models.DateTimeField(null=True, blank=True)
 
     internal_notes = models.TextField(null=True, blank=True, help_text="Notes that the client and general body should never see.")
     billed_in_bulk = models.BooleanField(default=False, db_index=True, help_text="Check if billing of this event will be deferred so that it can be combined with other events in a single invoice")
@@ -274,6 +276,22 @@ class BaseEvent(PolymorphicModel):
     cancelled_on = models.DateTimeField(null=True, blank=True)
     cancelled_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="eventcancellations", null=True, blank=True)
     cancelled_reason = models.TextField(null=True, blank=True)
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        super().clean()
+        if self.event_status in ('Confirmed', 'Post Event'):
+            errors = {}
+            if not self.location:
+                errors['location'] = 'Location is required for confirmed events.'
+            if not self.datetime_setup_complete:
+                errors['datetime_setup_complete'] = 'Setup completion time is required for confirmed events.'
+            if not self.datetime_start:
+                errors['datetime_start'] = 'Start time is required for confirmed events.'
+            if not self.datetime_end:
+                errors['datetime_end'] = 'End time is required for confirmed events.'
+            if errors:
+                raise ValidationError(errors)
 
     def __str__(self):
         return self.event_name
@@ -304,7 +322,7 @@ class BaseEvent(PolymorphicModel):
 
     def cal_location(self):
         """ Location data to display on calendars """
-        return self.location.name
+        return self.location.name if self.location else 'TBD'
 
     def cal_start(self):
         """ Start time used by calendars """
@@ -322,6 +340,52 @@ class BaseEvent(PolymorphicModel):
         """ Unique event id for use by calendars """
         return "event" + str(self.id) + "@lnldb"
 
+    MAX_EVENT_DEPTH = 3
+
+    @property
+    def depth(self):
+        """How deep this event is in the hierarchy (0 = root)"""
+        d = 0
+        current = self
+        while current.parent_id is not None:
+            d += 1
+            current = current.parent
+            if d > self.MAX_EVENT_DEPTH:
+                break
+        return d
+
+    @property
+    def root_event(self):
+        """Walk up to the top-level ancestor"""
+        current = self
+        while current.parent_id is not None:
+            current = current.parent
+        return current
+
+    @property
+    def all_descendants(self):
+        """Get all sub-events recursively"""
+        descendants = []
+        for child in self.sub_events.all():
+            descendants.append(child)
+            descendants.extend(child.all_descendants)
+        return descendants
+
+    @property
+    def is_leaf(self):
+        """Whether this event has no sub-events"""
+        return not self.sub_events.exists()
+
+    @property
+    def breadcrumbs(self):
+        """List of ancestors from root to self"""
+        crumbs = []
+        current = self
+        while current is not None:
+            crumbs.insert(0, current)
+            current = current.parent if current.parent_id else None
+        return crumbs
+
     @property
     def crew_needing_reports(self):
         """ List of crew chiefs who have not yet submitted a CC report """
@@ -335,6 +399,8 @@ class BaseEvent(PolymorphicModel):
     @property
     def reports_editable(self):
         """ Returns false if too much time has elapsed since the end of the event """
+        if not self.datetime_end:
+            return True
         end_plus_time = self.datetime_end + datetime.timedelta(days=CCR_DELTA)
         return timezone.now() < end_plus_time
 
@@ -344,7 +410,7 @@ class BaseEvent(PolymorphicModel):
             return "Cancelled"
         elif self.closed:
             return "Closed"
-        elif self.approved and self.datetime_setup_complete > datetime.datetime.now(datetime.timezone.utc) and not self.reviewed:
+        elif self.approved and self.datetime_setup_complete and self.datetime_setup_complete > datetime.datetime.now(datetime.timezone.utc) and not self.reviewed:
             return "Approved"
         elif not self.approved:
             return "Awaiting Approval"
@@ -370,10 +436,14 @@ class BaseEvent(PolymorphicModel):
 
     @property
     def over(self):
+        if not self.datetime_end:
+            return False
         return self.datetime_end < datetime.datetime.now(datetime.timezone.utc)
 
     @property
     def late(self):
+        if not self.datetime_setup_complete:
+            return False
         return self.datetime_setup_complete - self.submitted_on < datetime.timedelta(weeks=2)
 
     @property
@@ -417,6 +487,8 @@ class BaseEvent(PolymorphicModel):
 
     @property
     def datetime_nice(self):
+        if not self.datetime_start or not self.datetime_end:
+            return "TBD"
         out_str = ""
         out_str += self.datetime_start.strftime("%a %m/%d/%Y %I:%M %p - ")
         if self.datetime_start.date() == self.datetime_end.date():
@@ -1570,6 +1642,25 @@ class EventCCInstance(models.Model):
         ordering = ('-event__datetime_start',)
 
 
+class CrewChiefInterest(models.Model):
+    """Tracks a user's interest in crew chiefing a particular event"""
+    event = models.ForeignKey(BaseEvent, on_delete=models.CASCADE, related_name='cc_interests')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='cc_interests')
+    services = models.ManyToManyField(Service, blank=True, related_name='cc_interests',
+                                      help_text="Which services the user is interested in crew chiefing")
+    notes = models.TextField(null=True, blank=True, help_text="Any notes about availability or preferences")
+    created_on = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('event', 'user')
+        ordering = ('-created_on',)
+        verbose_name = 'Crew Chief Interest'
+        verbose_name_plural = 'Crew Chief Interests'
+
+    def __str__(self):
+        return f'{self.user.get_full_name()} interested in {self.event}'
+
+
 class ReportReminder(models.Model):
     """ A log of CC Report Reminders sent """
     event = models.ForeignKey(BaseEvent, on_delete=models.CASCADE, related_name="ccreportreminders")
@@ -1588,6 +1679,26 @@ class EventAttachment(models.Model):
     attachment = models.FileField(upload_to=attachment_file_name)
     note = models.TextField(null=True, blank=True, default="")
     externally_uploaded = models.BooleanField(default=False)
+
+
+def event_image_path(instance, filename):
+    return 'event_images/{0}/{1}'.format(instance.event.id, filename)
+
+
+class EventImage(models.Model):
+    """Images that can be embedded in event descriptions for visual reference"""
+    event = models.ForeignKey(BaseEvent, on_delete=models.CASCADE, related_name='images')
+    image = models.ImageField(upload_to=event_image_path)
+    caption = models.CharField(max_length=255, null=True, blank=True)
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    uploaded_on = models.DateTimeField(auto_now_add=True)
+    display_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ('display_order', 'uploaded_on')
+
+    def __str__(self):
+        return f'Image for {self.event}: {self.caption or self.image.name}'
 
 
 @reversion.register()
@@ -1800,3 +1911,67 @@ class CrewAttendanceRecord(models.Model):
 
     def __str__(self):
         return self.user.name + " - " + self.event.event_name
+
+
+class ProductionTemplate(models.Model):
+    """Reusable template for event production planning"""
+    name = models.CharField(max_length=128)
+    description = models.TextField(null=True, blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name='production_templates')
+    created_on = models.DateTimeField(auto_now_add=True)
+    is_default = models.BooleanField(default=False, help_text="Use this template by default when creating production plans")
+
+    class Meta:
+        ordering = ('-is_default', 'name')
+        permissions = (
+            ('manage_templates', 'Create and edit production templates'),
+        )
+
+    def __str__(self):
+        return self.name
+
+
+class ProductionTemplateSection(models.Model):
+    """A section within a production template with default content"""
+    template = models.ForeignKey(ProductionTemplate, on_delete=models.CASCADE, related_name='sections')
+    title = models.CharField(max_length=128)
+    description = models.TextField(null=True, blank=True,
+                                   help_text="Default content/instructions for this section")
+    order = models.PositiveIntegerField(default=0)
+    is_required = models.BooleanField(default=False, help_text="Whether crew chiefs must fill this section out")
+
+    class Meta:
+        ordering = ('order',)
+
+    def __str__(self):
+        return f'{self.template.name}: {self.title}'
+
+
+class EventProductionPlan(models.Model):
+    """An event's production plan, optionally based on a template"""
+    event = models.OneToOneField(BaseEvent, on_delete=models.CASCADE, related_name='production_plan')
+    template = models.ForeignKey(ProductionTemplate, on_delete=models.SET_NULL, null=True, blank=True,
+                                 related_name='plans')
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name='production_plans')
+    created_on = models.DateTimeField(auto_now_add=True)
+    updated_on = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f'Production Plan for {self.event}'
+
+
+class EventProductionSection(models.Model):
+    """A filled-in section of an event's production plan"""
+    plan = models.ForeignKey(EventProductionPlan, on_delete=models.CASCADE, related_name='sections')
+    title = models.CharField(max_length=128)
+    content = models.TextField(null=True, blank=True)
+    order = models.PositiveIntegerField(default=0)
+    completed = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ('order',)
+
+    def __str__(self):
+        return f'{self.plan.event}: {self.title}'
