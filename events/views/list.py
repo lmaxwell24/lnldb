@@ -1188,6 +1188,10 @@ def event_pipeline(request):
 
     context['pipeline'] = pipeline
     context['status_list'] = statuses
+    context['pipeline_groups'] = [
+        {'status': status, 'events': pipeline[status], 'count': pipeline[status].count()}
+        for status in statuses
+    ]
 
     # Summary stats
     context['total_active'] = sum(qs.count() for qs in pipeline.values())

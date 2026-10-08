@@ -407,3 +407,26 @@ def generate_event_bill_pdf_multi(request, ids=None):
     resp = HttpResponse(output_file.getvalue(), content_type='application/pdf')
     resp['Content-Disposition'] = 'inline; filename="multi-event-bill.pdf"'
     return resp
+
+
+@login_required
+def generate_production_plan_pdf(request, id):
+    """Generate printable PDF for an event's production plan"""
+    event = get_object_or_404(BaseEvent, pk=id)
+    if not (request.user.has_perm('events.view_events') or request.user.has_perm('events.view_events', event)):
+        raise PermissionDenied
+
+    if not hasattr(event, 'production_plan'):
+        raise Http404("No production plan exists for this event.")
+
+    plan = event.production_plan
+    context = {
+        'event': event,
+        'plan': plan,
+        'sections': plan.sections.all().order_by('order'),
+    }
+
+    resp = generate_pdf(context, 'pdf_templates/production_plan_pdf.html', request)
+    resp['Content-Disposition'] = 'inline; filename="%s-production-plan.pdf"' % slugify(event.event_name)
+    return resp
+

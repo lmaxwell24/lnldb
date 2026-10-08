@@ -15,3 +15,12 @@ def getattribute(value, arg):
 
 
 register.filter('getattribute', getattribute)
+
+
+@register.filter
+def get_item(dictionary, key):
+    """Gets an item from a dictionary dynamically by key"""
+    if isinstance(dictionary, dict):
+        return dictionary.get(key)
+    return None
+

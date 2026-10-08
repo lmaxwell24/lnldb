@@ -1,0 +1,77 @@
+{% extends "pdf_templates/pdf_base.html" %}
+{% load static %}
+{% load markdown_deux_tags %}
+
+{% block body %}
+<div>
+    <table>
+        <tr>
+            <td class="logo"><img id="logo-img" src="{% static 'img/pdf-lnl-logo.png' %}" width="200" height="150"></td>
+            <td class="lnl-contact">
+                <ul class="list-unstyled">
+                    <h2 class="contact-name">WPI&nbsp;Lens&nbsp;and&nbsp;Lights</h2>
+                    <li>100 Institute Road, Worcester MA</li>
+                    <li>Office: 508-831-5595 | lnl@wpi.edu</li>
+                </ul>
+            </td>
+            <td class="head">
+                <h1 class="megatext">PRODUCTION PLAN</h1>
+                <h2 class="subtext">{{ event.event_name }}</h2>
+                <p class="subtext"><b>Generated:</b> {% now "M j, Y" %}</p>
+            </td>
+        </tr>
+    </table>
+
+    <table class="info" style="margin-top: 15px; margin-bottom: 20px;">
+        <tr>
+            <td width="120"><b>Event Name:</b></td>
+            <td>{{ event.event_name }}</td>
+            <td width="120"><b>Location:</b></td>
+            <td>{{ event.location|default:"TBD" }}</td>
+        </tr>
+        <tr>
+            <td><b>Start Time:</b></td>
+            <td>{{ event.datetime_start|date:"D, N j, Y g:i A"|default:"TBD" }}</td>
+            <td><b>End Time:</b></td>
+            <td>{{ event.datetime_end|date:"D, N j, Y g:i A"|default:"TBD" }}</td>
+        </tr>
+        <tr>
+            <td><b>Plan Title:</b></td>
+            <td>{{ plan.name|default:"Production Plan" }}</td>
+            <td><b>Created By:</b></td>
+            <td>{{ plan.created_by.get_full_name }}</td>
+        </tr>
+    </table>
+
+    <hr style="margin-bottom: 20px;" />
+
+    {% for section in sections %}
+    <div style="margin-bottom: 25px; page-break-inside: avoid;">
+        <h2 style="background-color: #f0f0f0; padding: 6px 10px; border-left: 4px solid #0056b3; font-size: 16px; margin-bottom: 8px;">
+            {{ section.title }}
+            {% if section.start_time or section.end_time %}
+                <span style="font-size: 12px; font-weight: normal; float: right;">
+                    ({{ section.start_time|default:"TBD" }} &ndash; {{ section.end_time|default:"TBD" }})
+                </span>
+            {% endif %}
+        </h2>
+        <div style="padding-left: 10px; font-size: 13px;">
+            {% if section.content %}
+                <div>{{ section.content|markdown }}</div>
+            {% else %}
+                <p style="color: #666; italic;">No detailed notes for this section.</p>
+            {% endif %}
+
+            {% if section.checklist %}
+                <div style="margin-top: 10px; padding: 8px; background-color: #fafafa; border: 1px solid #ddd;">
+                    <b>Section Checklist:</b>
+                    <pre style="font-size: 12px; margin-top: 5px;">{{ section.checklist }}</pre>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+    {% empty %}
+    <p>No sections defined in this production plan.</p>
+    {% endfor %}
+</div>
+{% endblock %}

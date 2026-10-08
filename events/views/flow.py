@@ -1660,7 +1660,8 @@ def express_interest(request, id):
         'existing': existing,
         'msg': 'Express Interest in Crew Chiefing' if not existing else 'Update Your Interest',
     }
-    return render(request, 'form_crispy.html', context)
+    return render(request, 'event_interest.html', context)
+
 
 
 @login_required
@@ -1671,6 +1672,22 @@ def remove_interest(request, id):
         CrewChiefInterest.objects.filter(event=event, user=request.user).delete()
         messages.add_message(request, messages.SUCCESS, 'Your interest has been removed.')
     return HttpResponseRedirect(reverse('events:detail', args=(event.id,)))
+
+
+@login_required
+def remove_interest_user(request, id, user_id):
+    """Remove a specific candidate's interest in an event (for event editors/managers)"""
+    event = get_object_or_404(BaseEvent, pk=id)
+    if not (request.user.has_perm('events.edit_event_hours', event) or
+            request.user.has_perm('events.approve_event') or
+            request.user.has_perm('events.can_chief_event')):
+        raise PermissionDenied
+
+    if request.method == 'POST':
+        CrewChiefInterest.objects.filter(event=event, user_id=user_id).delete()
+        messages.add_message(request, messages.SUCCESS, 'Candidate interest entry removed.')
+    return HttpResponseRedirect(reverse('events:detail', args=(event.id,)) + '#crew')
+
 
 
 @login_required
@@ -1706,7 +1723,8 @@ def event_images(request, id):
         'formset': formset,
         'msg': 'Manage Event Images',
     }
-    return render(request, 'formset_crispy_generic.html', context)
+    return render(request, 'event_images.html', context)
+
 
 
 @login_required
@@ -1823,3 +1841,35 @@ def view_production_plan(request, id):
         'sections': plan.sections.all(),
     }
     return render(request, 'production_plan_view.html', context)
+
+
+@login_required
+def inherit_parent_services(request, id):
+    """Copy/inherit service instances from the parent event"""
+    event = get_object_or_404(BaseEvent, pk=id)
+    if not (request.user.has_perm('events.adjust_event_charges', event) or
+            request.user.has_perm('events.edit_event_text', event)):
+        raise PermissionDenied
+
+    if not event.parent:
+        messages.add_message(request, messages.WARNING, 'This event does not have a parent event.')
+        return HttpResponseRedirect(reverse('events:detail', args=(event.id,)) + '#services')
+
+    if request.method == 'POST':
+        parent_services = event.parent.serviceinstance_set.all()
+        copied_count = 0
+        for parent_si in parent_services:
+            if not event.serviceinstance_set.filter(service=parent_si.service).exists():
+                ServiceInstance.objects.create(
+                    event=event,
+                    service=parent_si.service,
+                    detail=parent_si.detail
+                )
+                copied_count += 1
+
+        messages.add_message(
+            request, messages.SUCCESS,
+            f'Inherited {copied_count} service(s) from parent event "{event.parent.event_name}".'
+        )
+    return HttpResponseRedirect(reverse('events:detail', args=(event.id,)) + '#services')
+

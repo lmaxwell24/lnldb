@@ -92,6 +92,10 @@ urlpatterns = [
     # CC Interest
     re_path(r'^interest/(?P<id>[0-9a-f]+)/$', flow_views.express_interest, name="express-interest"),
     re_path(r'^interest/(?P<id>[0-9a-f]+)/remove/$', flow_views.remove_interest, name="remove-interest"),
+    re_path(r'^interest/(?P<id>[0-9a-f]+)/remove/(?P<user_id>[0-9a-f]+)/$', flow_views.remove_interest_user, name="remove-interest-user"),
+    re_path(r'^inherit-services/(?P<id>[0-9a-f]+)/$', flow_views.inherit_parent_services, name="inherit-parent-services"),
+
+
 
     # Event Images
     re_path(r'^images/(?P<id>[0-9a-f]+)/$', flow_views.event_images, name="images"),
@@ -100,6 +104,8 @@ urlpatterns = [
     re_path(r'^plan/(?P<id>[0-9a-f]+)/create/$', flow_views.create_production_plan, name="create-plan"),
     re_path(r'^plan/(?P<id>[0-9a-f]+)/edit/$', flow_views.edit_production_plan, name="edit-plan"),
     re_path(r'^plan/(?P<id>[0-9a-f]+)/view/$', flow_views.view_production_plan, name="view-plan"),
+    re_path(r'^plan/(?P<id>[0-9a-f]+)/pdf/$', pdf_views.generate_production_plan_pdf, name="production-plan-pdf"),
+
 
     # Pipeline Dashboard
     re_path(r'^pipeline/$', list_views.event_pipeline, name="pipeline"),

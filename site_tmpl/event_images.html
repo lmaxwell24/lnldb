@@ -1,0 +1,86 @@
+{% extends 'base_admin.html' %}
+{% load crispy_forms_tags %}
+
+{% block title %}Manage Photos — {{ event }} | Lens and Lights at WPI{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <h2>Manage Event Photos & Stage Diagrams <small>for {{ event.event_name }}</small></h2>
+        <p class="text-muted">Upload photos, floor plans, and stage diagrams related to this event.</p>
+    </div>
+</div>
+
+{% if event.images.exists %}
+<div class="row" style="margin-bottom: 25px;">
+    <div class="col-md-12">
+        <h3>Existing Photos</h3>
+        <div class="row">
+            {% for img in event.images.all %}
+                <div class="col-md-3" style="margin-bottom: 15px;">
+                    <div class="thumbnail">
+                        <img src="{{ img.image.url }}" alt="{{ img.caption }}" style="max-height: 150px; object-fit: cover;" />
+                        <div class="caption">
+                            <p><strong>{{ img.caption|default:"No caption" }}</strong></p>
+                            <small class="text-muted">Order: {{ img.display_order }} &middot; By {{ img.uploaded_by.get_full_name }}</small>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="row">
+    <div class="col-md-12">
+        <div class="panel panel-default">
+            <div class="panel-heading">
+                <h3 class="panel-title"><span class="glyphicon glyphicon-upload"></span> Upload New Images / Edit Image List</h3>
+            </div>
+            <div class="panel-body">
+                <form method="post" action="" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    {{ formset.management_form }}
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th style="width: 35%;">File</th>
+                                <th style="width: 45%;">Caption</th>
+                                <th style="width: 10%;">Display Order</th>
+                                <th style="width: 10%;">Delete</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for form in formset %}
+                                <tr>
+                                    <td>
+                                        {{ form.id }}
+                                        {{ form.image }}
+                                        {% if form.image.errors %}<div class="text-danger">{{ form.image.errors }}</div>{% endif %}
+                                    </td>
+                                    <td>
+                                        {{ form.caption }}
+                                        {% if form.caption.errors %}<div class="text-danger">{{ form.caption.errors }}</div>{% endif %}
+                                    </td>
+                                    <td>
+                                        {{ form.display_order }}
+                                        {% if form.display_order.errors %}<div class="text-danger">{{ form.display_order.errors }}</div>{% endif %}
+                                    </td>
+                                    <td>{{ form.DELETE }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <span class="glyphicon glyphicon-save"></span> Upload & Save Images
+                        </button>
+                        <a href="{% url 'events:detail' event.id %}" class="btn btn-default btn-lg">Back to Event</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

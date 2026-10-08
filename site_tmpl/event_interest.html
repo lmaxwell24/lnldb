@@ -1,0 +1,42 @@
+{% extends 'base_admin.html' %}
+{% load crispy_forms_tags %}
+
+{% block title %}{{ msg }} — {{ event }} | Lens and Lights at WPI{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 col-md-offset-2">
+        <div class="panel panel-default">
+            <div class="panel-heading">
+                <h3 class="panel-title"><span class="glyphicon glyphicon-hand-up"></span> {{ msg }}</h3>
+            </div>
+            <div class="panel-body">
+                <p class="lead">Event: <strong>{{ event.event_name }}</strong></p>
+                <p>
+                    <strong>Location:</strong> {{ event.location|default:"TBD" }}<br />
+                    <strong>Date & Time:</strong> {{ event.datetime_nice }}
+                </p>
+                <hr />
+                <form method="post" action="">
+                    {% csrf_token %}
+                    {% crispy form %}
+
+                    <div class="form-actions" style="margin-top: 20px;">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <span class="glyphicon glyphicon-check"></span> {% if existing %}Update Interest{% else %}Submit Interest{% endif %}
+                        </button>
+
+                        {% if existing %}
+                            <button type="submit" formaction="{% url 'events:remove-interest' event.id %}" class="btn btn-danger btn-lg pull-right" onclick="return confirm('Are you sure you want to remove your interest?');">
+                                <span class="glyphicon glyphicon-trash"></span> Remove Interest
+                            </button>
+                        {% endif %}
+
+                        <a href="{% url 'events:detail' event.id %}" class="btn btn-default btn-lg">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

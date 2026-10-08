@@ -26,7 +26,9 @@ from events.models import (BaseEvent, Billing, MultiBilling, BillingEmail, Multi
                            Category, CCReport, Event, Event2019, EventAttachment, EventCCInstance, Extra,
                            ExtraInstance, Hours, Lighting, Location, Organization, OrganizationTransfer,
                            OrgBillingVerificationEvent, Workshop, WorkshopDate, Projection, Service, ServiceInstance,
-                           Sound, PostEventSurvey, OfficeHour, Fee, Discount, EventOccurrence, Pricelist)
+                           Sound, PostEventSurvey, OfficeHour, Fee, Discount, EventOccurrence, Pricelist,
+                           CrewChiefInterest, EventImage, ProductionTemplate, ProductionTemplateSection,
+                           EventProductionPlan, EventProductionSection)
 from events.widgets import ValueSelectField
 from helpers.form_text import markdown_at_msgs
 from helpers.util import curry_class
@@ -580,8 +582,10 @@ class InternalEventForm2019(FieldAccessForm):
             Tab(
                 'Name And Location',
                 'event_name',
+                'parent',
                 'event_status',
                 'location',
+
                 'lnl_contact',
                 'pricelist',
                 'applied_fees',
@@ -659,9 +663,10 @@ class InternalEventForm2019(FieldAccessForm):
 
         edit_descriptions = FieldAccessLevel(
             lambda user, instance: user.has_perm('events.edit_event_text', instance),
-            enable=('event_name', 'location', 'description',
+            enable=('event_name', 'parent', 'location', 'description',
                     'lighting_reqs', 'sound_reqs', 'proj_reqs', 'otherservice_reqs', 'max_crew')
         )
+
 
         change_owner = FieldAccessLevel(
             lambda user, instance: user.has_perm('events.adjust_event_owner', instance),
@@ -720,11 +725,12 @@ class InternalEventForm2019(FieldAccessForm):
 
     class Meta:
         model = Event2019
-        fields = ('event_name', 'event_status', 'location', 'lnl_contact', 'description', 'internal_notes', 'billing_org',
+        fields = ('event_name', 'parent', 'event_status', 'location', 'lnl_contact', 'description', 'internal_notes', 'billing_org',
                   'billed_in_bulk', 'contact', 'org', 'datetime_setup_complete', 'datetime_start',
                   'datetime_end', 'sensitive', 'test_event',
                   'entered_into_workday', 'send_survey', 'max_crew','cancelled_reason',
                   'reference_code', 'pricelist', 'applied_fees', 'applied_discounts', 'is_sga_funded')
+
         widgets = {
             'description': EasyMDEEditor(),
             'internal_notes': EasyMDEEditor(),
@@ -737,7 +743,14 @@ class InternalEventForm2019(FieldAccessForm):
         group_label=lambda group: group.name,
     )
     contact = AutoCompleteSelectField('Users', required=False)
+    parent = forms.ModelChoiceField(
+        queryset=BaseEvent.objects.filter(closed=False, cancelled=False),
+        required=False,
+        label="Parent Series / Event",
+        help_text="Optionally select a parent series or header event to group this sub-event under"
+    )
     lnl_contact = AutoCompleteSelectField('Members', label="LNL Contact", required=False)
+
     org = CustomAutoCompleteSelectMultipleField('Orgs', required=False, label="Client(s)")
     billing_org = AutoCompleteSelectField('Orgs', required=False, label="Client to bill")
     datetime_setup_complete = forms.SplitDateTimeField(initial=timezone.now, label="Setup Completed")
@@ -2012,3 +2025,93 @@ Note: Any riders or documentation provided to you from the artist/performer whic
 determine the technical needs of your event may be attached to this request once it is submitted by
 going to your LNL account and selecting "Previous Workorders".
 """
+
+
+class CrewChiefInterestForm(forms.ModelForm):
+    """Form for users to express interest in crew chiefing an event"""
+    services = forms.ModelMultipleChoiceField(
+        queryset=Service.objects.none(),
+        widget=forms.CheckboxSelectMultiple,
+        required=False,
+        help_text="Select the services you're interested in crew chiefing"
+    )
+    notes = forms.CharField(
+        widget=forms.Textarea(attrs={'rows': 3, 'placeholder': 'Any notes about your availability or preferences...'}),
+        required=False
+    )
+
+    class Meta:
+        model = CrewChiefInterest
+        fields = ['services', 'notes']
+
+    def __init__(self, *args, event=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if event:
+            self.fields['services'].queryset = get_qs_from_event(event)
+        self.helper = FormHelper()
+        self.helper.form_method = 'post'
+        self.helper.add_input(Submit('submit', 'Save Interest', css_class='btn btn-primary btn-lg'))
+
+
+class EventImageForm(forms.ModelForm):
+    """Form for uploading images to an event"""
+    class Meta:
+        model = EventImage
+        fields = ['image', 'caption', 'display_order']
+        widgets = {
+            'caption': forms.TextInput(attrs={'placeholder': 'Optional caption for this image'}),
+        }
+
+
+class ProductionTemplateForm(forms.ModelForm):
+    """Form for creating/editing production planning templates"""
+    class Meta:
+        model = ProductionTemplate
+        fields = ['name', 'description', 'is_default']
+        widgets = {
+            'description': forms.Textarea(attrs={'rows': 3}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.helper = FormHelper()
+        self.helper.form_method = 'post'
+        self.helper.add_input(Submit('submit', 'Save Template', css_class='btn btn-primary btn-lg'))
+
+
+class ProductionTemplateSectionForm(forms.ModelForm):
+    """Form for sections within a production template"""
+    class Meta:
+        model = ProductionTemplateSection
+        fields = ['title', 'description', 'order', 'is_required']
+        widgets = {
+            'description': forms.Textarea(attrs={'rows': 4}),
+        }
+
+
+class EventProductionSectionForm(forms.ModelForm):
+    """Form for filling in a production plan section"""
+    class Meta:
+        model = EventProductionSection
+        fields = ['title', 'content', 'order', 'completed']
+        widgets = {
+            'content': forms.Textarea(attrs={'rows': 6}),
+        }
+
+
+class CreateProductionPlanForm(forms.Form):
+    """Form to select a template when creating a production plan"""
+    template = forms.ModelChoiceField(
+        queryset=ProductionTemplate.objects.all(),
+        required=False,
+        empty_label="Start from scratch (no template)",
+        help_text="Optionally select a template to pre-fill sections"
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.helper = FormHelper()
+        self.helper.form_method = 'post'
+        self.helper.add_input(Submit('submit', 'Create Production Plan', css_class='btn btn-success btn-lg'))
+
+

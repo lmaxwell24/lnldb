@@ -38,8 +38,12 @@
                         {% endpermission %}
 
                         {% permission request.user has 'events.view_event' %}
+                        <li>
+                            <a href="{% url "events:pipeline" %}"><strong><span class="glyphicon glyphicon-tasks"></span> Event Pipeline</strong></a>
+                        </li>
                         <li class="divider"></li>
                         {% endpermission %}
+
 
                         {% permission request.user has 'events.approve_event' %}
                         <li>

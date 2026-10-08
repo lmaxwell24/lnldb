@@ -1,0 +1,161 @@
+{% extends 'base_admin.html' %}
+{% load permissionif %}
+
+{% block title %}Event Pipeline | Lens and Lights at WPI{% endblock %}
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <h2>Event Pipeline <small>Active events by status</small></h2>
+    </div>
+</div>
+
+<div class="row" style="margin-bottom: 20px;">
+    <div class="col-md-3">
+        <div class="panel panel-info">
+            <div class="panel-heading">
+                <h3 class="panel-title"><span class="glyphicon glyphicon-list"></span> Total Active</h3>
+            </div>
+            <div class="panel-body" style="font-size: 2em; text-align: center;">
+                {{ total_active }}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="panel panel-warning">
+            <div class="panel-heading">
+                <h3 class="panel-title"><span class="glyphicon glyphicon-user"></span> Need CC</h3>
+            </div>
+            <div class="panel-body" style="font-size: 2em; text-align: center;">
+                {{ needs_cc }}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="panel panel-danger">
+            <div class="panel-heading">
+                <h3 class="panel-title"><span class="glyphicon glyphicon-calendar"></span> Need Dates</h3>
+            </div>
+            <div class="panel-body" style="font-size: 2em; text-align: center;">
+                {{ needs_dates }}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="panel panel-success">
+            <div class="panel-heading">
+                <h3 class="panel-title"><span class="glyphicon glyphicon-hand-up"></span> Have Interest</h3>
+            </div>
+            <div class="panel-body" style="font-size: 2em; text-align: center;">
+                {{ has_interest }}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% for group in pipeline_groups %}
+<div class="row" style="margin-bottom: 20px;">
+    <div class="col-md-12">
+        <div class="panel panel-default">
+            <div class="panel-heading">
+                <h3 class="panel-title">
+                    {{ group.status }}
+                    <span class="badge">{{ group.count }}</span>
+                </h3>
+            </div>
+            {% if group.events %}
+            <table class="table table-striped table-condensed">
+                <thead>
+                    <tr>
+                        <th>Event Name</th>
+                        <th>Client</th>
+                        <th>Location</th>
+                        <th>Date</th>
+                        <th>CCs</th>
+                        <th><span class="glyphicon glyphicon-hand-up" title="Interested"></span></th>
+                        <th>Completeness</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for event in group.events %}
+                    <tr>
+                        <td>
+                            {% if event.parent %}
+                                <span class="text-muted" style="margin-right: 4px;">↳</span>
+                            {% endif %}
+                            <a href="{% url 'events:detail' event.id %}">{{ event.event_name }}</a>
+                            {% if event.sub_events.exists %}
+                                <span class="label label-default" title="Has sub-events">
+                                    {{ event.sub_events.count }} sub
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% for org in event.org.all %}
+                                {{ org.retname }}{% if not forloop.last %}, {% endif %}
+                            {% empty %}
+                                <span class="text-muted">—</span>
+                            {% endfor %}
+                        </td>
+                        <td>
+                            {% if event.location %}
+                                {{ event.location }}
+                            {% else %}
+                                <span class="label label-warning">TBD</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if event.datetime_start %}
+                                {{ event.datetime_start|date:"M j, Y g:i A" }}
+                            {% else %}
+                                <span class="label label-warning">TBD</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if event.ccinstances.count > 0 %}
+                                <span class="label label-success">{{ event.ccinstances.count }}</span>
+                            {% else %}
+                                <span class="label label-default">0</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if event.cc_interests.count > 0 %}
+                                <span class="label label-info" title="{{ event.cc_interests.count }} interested">
+                                    {{ event.cc_interests.count }}
+                                </span>
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if event.location %}
+                                <span class="glyphicon glyphicon-map-marker text-success" title="Has location"></span>
+                            {% else %}
+                                <span class="glyphicon glyphicon-map-marker text-danger" title="No location"></span>
+                            {% endif %}
+                            {% if event.datetime_start %}
+                                <span class="glyphicon glyphicon-time text-success" title="Has date/time"></span>
+                            {% else %}
+                                <span class="glyphicon glyphicon-time text-danger" title="No date/time"></span>
+                            {% endif %}
+                            {% if event.ccinstances.count > 0 %}
+                                <span class="glyphicon glyphicon-user text-success" title="Has CC assigned"></span>
+                            {% else %}
+                                <span class="glyphicon glyphicon-user text-danger" title="No CC assigned"></span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="panel-body text-muted">
+                No events in this stage.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endfor %}
+
+
+{% endblock %}

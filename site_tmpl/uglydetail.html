@@ -30,10 +30,21 @@
                             <a class="btn btn-primary btn-lg" target="_blank" href="https://25live.collegenet.com/pro/wpi#!/home/event/{{ event.event_id }}/details">25Live</a>
                         </tr>
                 {% endif %}
+                {% if not event.closed %}
+                    {% if event.production_plan %}
+                        <a class="btn btn-info btn-lg" href="{% url 'events:view-plan' event.id %}">Production Plan</a>
+                    {% else %}
+                        <a class="btn btn-default btn-lg" href="{% url 'events:create-plan' event.id %}">Create Plan</a>
+                    {% endif %}
+                    <a class="btn btn-warning btn-lg" href="{% url 'events:express-interest' event.id %}">
+                        <span class="glyphicon glyphicon-hand-up"></span> CC Interest
+                    </a>
+                {% endif %}
                 {% permission request.user has 'events.add_raw_event' %}
                     <a class="btn btn-success btn-lg"
                        href="{% url "events:duplicate" event.id %}">Duplicate</a>
                 {% endpermission %}
+
                 {% if event.closed %}
                     {% permission request.user has 'events.reopen_event' of event %}
                         <a class="btn btn-default btn-lg" href="#reopenModal" role="button"
@@ -181,6 +192,8 @@
                 <li><a href="#schedule" data-toggle="tab">Schedule</a></li>
                 <li><a href="#services" data-toggle="tab">Services</a></li>
                 <li><a href="#crew" data-toggle="tab">Crew</a></li>
+                <li><a href="#production-plan" data-toggle="tab">Production Plan</a></li>
+                <li><a href="#images" data-toggle="tab">Gallery</a></li>
                 {% permission request.user has 'events.view_event_reports' of event %}
                     <li><a href="#reports" data-toggle="tab">Reports</a></li>
                 {% endpermission %}
@@ -197,13 +210,26 @@
                 <li><a href="#history" data-toggle="tab">History</a></li>
             </ul>
 
+
             <div class="tab-content">
                 <div id="home" class="tab-pane active">
                     <table class="table">
+                        {% if event.parent %}
+
+                        <tr>
+                            <th>Parent Event</th>
+                            <td>
+                                <a href="{% url 'events:detail' event.parent.id %}">
+                                    <span class="glyphicon glyphicon-level-up"></span> {{ event.parent.event_name }}
+                                </a>
+                            </td>
+                        </tr>
+                        {% endif %}
                         <tr>
                             <th>Event Status</th>
                             <td>{{event.event_status}}</td>
                         </tr>
+
                         <tr>
                             <th>LNL Contact</th>
                             <td>
@@ -386,7 +412,43 @@
                         {% endpermission %}
                     </table>
 
+                    {% if event.sub_events.exists %}
+                    <div class="panel panel-default" style="margin-top: 25px;">
+                        <div class="panel-heading">
+                            <h3 class="panel-title"><span class="glyphicon glyphicon-tree-conifer"></span> Sub-Events & Series Instances ({{ event.sub_events.count }})</h3>
+                        </div>
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Event Name</th>
+                                    <th>Status</th>
+                                    <th>Location</th>
+                                    <th>Date</th>
+                                    <th>CCs</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for child in event.sub_events.all %}
+                                <tr>
+                                    <td>
+                                        <a href="{% url 'events:detail' child.id %}">{{ child.event_name }}</a>
+                                        {% if child.sub_events.exists %}
+                                            <span class="label label-default">{{ child.sub_events.count }} sub</span>
+                                        {% endif %}
+                                    </td>
+                                    <td><span class="label label-info">{{ child.event_status }}</span></td>
+                                    <td>{{ child.location|default:"TBD" }}</td>
+                                    <td>{{ child.datetime_nice }}</td>
+                                    <td>{{ child.ccinstances.count }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% endif %}
+
                 </div>
+
                 <div id="schedule" class="tab-pane">
                     {% if not event.closed %}
                         {% permission request.user has 'events.adjust_event_charges' of event %}
@@ -438,10 +500,19 @@
                     {% if not event.closed %}
                         {% permission request.user has 'events.adjust_event_charges' of event %}
                             <div class="pull-right">
+                                {% if event.parent and event.parent.serviceinstance_set.exists %}
+                                    <form method="post" action="{% url 'events:inherit-parent-services' event.id %}" style="display:inline-block; margin-right: 8px;">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-lg btn-warning" onclick="return confirm('Inherit services from parent event {{ event.parent.event_name }}?');">
+                                            <span class="glyphicon glyphicon-duplicate"></span> Inherit Services from Parent
+                                        </button>
+                                    </form>
+                                {% endif %}
                                 <a class="btn btn-lg btn-info" href="{% url "events:extras" event.id %}">Modify Extras</a>
                             </div>
                         {% endpermission %}
                     {% endif %}
+
                     {% if event.lighting %}
                         <h2>Lighting Services ({{ event.lighting }})</h2>
                         <h3>Requirements:</h3>
@@ -549,8 +620,11 @@
                 <div id="crew" class="tab-pane">
                     {% if not event.closed %}
                         {% permission request.user has 'events.edit_event_hours' of event %}
-                            <a class="btn btn-lg btn-info pull-right" href="{% url "events:chiefs" event.id %}">Modify</a>
+                            <a class="btn btn-lg btn-info pull-right" href="{% url "events:chiefs" event.id %}" style="margin-left: 8px;">Modify Crew Chiefs</a>
                         {% endpermission %}
+                        <a class="btn btn-lg btn-warning pull-right" href="{% url "events:express-interest" event.id %}">
+                            <span class="glyphicon glyphicon-hand-up"></span> Express Interest
+                        </a>
                     {% endif %}
                     <h2> Crew Chief(s) </h2>
                     <table class="table">
@@ -574,23 +648,131 @@
                             <td>
                                 {{ cc.category }}
                             </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="4" class="text-muted">No Crew Chiefs currently assigned.</td></tr>
                         {% endfor %}
                     </table>
+
+                    <hr />
+                    <h3>Interested Crew Chiefs <small>Members looking to chief this event</small></h3>
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Services Interested In</th>
+                                <th>Notes</th>
+                                <th>Interested On</th>
+                                {% permission request.user has 'events.edit_event_hours' of event %}
+                                <th>Action</th>
+                                {% endpermission %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for interest in event.cc_interests.all %}
+                            <tr>
+                                <td>
+                                    <a href="{% url "accounts:detail" interest.user.id %}">{{ interest.user.get_full_name }}</a>
+                                </td>
+                                <td>
+                                    {% for svc in interest.services.all %}
+                                        <span class="label label-info">{{ svc.name }}</span>
+                                    {% empty %}
+                                        <span class="label label-default">Any Category</span>
+                                    {% endfor %}
+                                </td>
+                                <td>{{ interest.notes|default:"—" }}</td>
+                                <td>{{ interest.created_on|date:"M j, Y g:i A" }}</td>
+
+                                {% permission request.user has 'events.edit_event_hours' of event %}
+                                <td>
+                                    <form method="post" action="{% url 'events:remove-interest-user' event.id interest.user.id %}" style="display:inline;">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-xs btn-danger" onclick="return confirm('Remove candidate interest?');">
+                                            <span class="glyphicon glyphicon-trash"></span> Remove
+                                        </button>
+                                    </form>
+                                </td>
+                                {% endpermission %}
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="5" class="text-muted">No crew members have registered interest yet.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+
                     {% if event.max_crew %}
                     <h3 class="h5">Maximum Crew Limit: {{ event.max_crew }}</h3>
                     <h3 class="h5">Current Crew Count: {{ crew_count }}</h3>
                     {% endif %}
-                    {% comment %}
-                    <a class="btn btn-lg btn-info pull-right" href="{% url "events:add-crew" event.id %}">Modify</a>
-                    <h2> Crew </h2>
-                    <ul>
-                        {% for c in event.crew.all %}
-                        <li><a href="{% url "memberdetail" c.id %}">{{ c }}</a></li>
-                        {% endfor %}
-                    </ul>
-                    {% endcomment %}
-                    
                 </div>
+
+                <div id="production-plan" class="tab-pane">
+                    <div class="pull-right">
+                        {% if event.production_plan %}
+                            <a href="{% url 'events:production-plan-pdf' event.id %}" target="_blank" class="btn btn-info btn-lg">
+                                <span class="glyphicon glyphicon-print"></span> Export PDF
+                            </a>
+                            <a class="btn btn-primary btn-lg" href="{% url 'events:edit-plan' event.id %}">Edit Plan</a>
+                        {% else %}
+                            <a class="btn btn-success btn-lg" href="{% url 'events:create-plan' event.id %}">Create Plan</a>
+                        {% endif %}
+                    </div>
+                    <h2>Production Plan</h2>
+                    {% if event.production_plan %}
+                        <p class="lead">Plan: <strong>{{ event.production_plan.name }}</strong></p>
+                        {% for section in event.production_plan.sections.all %}
+                            <div class="panel panel-default">
+                                <div class="panel-heading">
+                                    <h3 class="panel-title">
+                                        {{ section.title }}
+                                        {% if section.completed %}
+                                            <span class="label label-success pull-right"><span class="glyphicon glyphicon-ok"></span> Complete</span>
+                                        {% endif %}
+                                    </h3>
+                                </div>
+                                <div class="panel-body">
+                                    {% if section.content %}
+                                        <p>{{ section.content|markdown }}</p>
+                                    {% else %}
+                                        <span class="text-muted">No content for this section.</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        {% endfor %}
+
+                    {% else %}
+                        <div class="alert alert-info">
+                            No production plan has been created for this event yet.
+                            <a href="{% url 'events:create-plan' event.id %}" class="btn btn-sm btn-primary" style="margin-left: 10px;">Create Plan Now</a>
+                        </div>
+                    {% endif %}
+                </div>
+
+                <div id="images" class="tab-pane">
+                    <div class="pull-right">
+                        <a class="btn btn-primary btn-lg" href="{% url 'events:images' event.id %}">Manage / Upload Photos</a>
+                    </div>
+                    <h2>Event Photos & Diagrams</h2>
+                    <div class="row">
+                        {% for img in event.images.all %}
+                            <div class="col-md-4">
+                                <div class="thumbnail">
+                                    <img src="{{ img.image.url }}" alt="{{ img.caption }}" style="max-height: 200px; object-fit: cover;" />
+                                    <div class="caption">
+                                        <p>{{ img.caption|default:"No caption" }}</p>
+                                        <small class="text-muted">By {{ img.uploaded_by.get_full_name }} on {{ img.uploaded_at|date:"M j, Y" }}</small>
+                                    </div>
+                                </div>
+                            </div>
+                        {% empty %}
+                            <div class="col-md-12">
+                                <div class="alert alert-info">No photos or stage diagrams uploaded yet.</div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
                 {% permission request.user has 'events.view_event_reports' of event %}
                 <div id="reports" class="tab-pane">
                     {% if not event.closed %}

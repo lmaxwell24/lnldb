@@ -1,0 +1,52 @@
+{% extends 'base_admin.html' %}
+{% load markdown_deux_tags %}
+
+{% block title %}Production Plan — {{ event }} | Lens and Lights at WPI{% endblock %}
+
+{% block content %}
+<div class="row" style="margin-bottom: 20px;">
+    <div class="col-md-8">
+        <h2>Production Plan: {{ event }}</h2>
+        {% if plan.template %}
+            <p class="lead">Template: <strong>{{ plan.template.name }}</strong></p>
+        {% endif %}
+        <p class="text-muted">
+            Created by {{ plan.created_by.get_full_name }} on {{ plan.created_on|date:"M j, Y g:i A" }}
+            &middot; Last updated {{ plan.updated_on|date:"M j, Y g:i A" }}
+        </p>
+    </div>
+    <div class="col-md-4 text-right" style="padding-top: 15px;">
+        <a href="{% url 'events:production-plan-pdf' event.id %}" target="_blank" class="btn btn-info btn-lg">
+            <span class="glyphicon glyphicon-print"></span> Export PDF
+        </a>
+        <a href="{% url 'events:edit-plan' event.id %}" class="btn btn-primary btn-lg">Edit Plan</a>
+        <a href="{% url 'events:detail' event.id %}" class="btn btn-default btn-lg">Back to Event</a>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-12">
+        {% for section in sections %}
+            <div class="panel panel-default">
+                <div class="panel-heading clearfix">
+                    <h3 class="panel-title pull-left" style="font-size: 1.2em; font-weight: bold;">
+                        {{ section.title }}
+                    </h3>
+                    {% if section.completed %}
+                        <span class="label label-success pull-right"><span class="glyphicon glyphicon-ok"></span> Complete</span>
+                    {% endif %}
+                </div>
+                <div class="panel-body">
+                    {% if section.content %}
+                        {{ section.content|markdown }}
+                    {% else %}
+                        <span class="text-muted">No content for this section yet.</span>
+                    {% endif %}
+                </div>
+            </div>
+        {% empty %}
+            <div class="alert alert-info">No sections defined in this production plan.</div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

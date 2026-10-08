@@ -1,0 +1,132 @@
+{% extends 'base_admin.html' %}
+{% load crispy_forms_tags %}
+{% load markdown_deux_tags %}
+
+{% block title %}Production Plan — {{ event }} | Lens and Lights at WPI{% endblock %}
+
+{% block content %}
+<div class="row" style="margin-bottom: 20px;">
+    <div class="col-md-8">
+        <h2>Production Plan <small>for {{ event }}</small></h2>
+        {% if plan.template %}
+            <p class="lead" style="margin-bottom: 5px;">Template: <strong>{{ plan.template.name }}</strong></p>
+        {% endif %}
+        <p class="text-muted">
+            Created by {{ plan.created_by.get_full_name }} on {{ plan.created_on|date:"M j, Y g:i A" }}
+            &middot; Last updated {{ plan.updated_on|date:"M j, Y g:i A" }}
+        </p>
+    </div>
+    <div class="col-md-4 text-right" style="padding-top: 15px;">
+        <a href="{% url 'events:production-plan-pdf' event.id %}" target="_blank" class="btn btn-info btn-lg">
+            <span class="glyphicon glyphicon-print"></span> Export PDF
+        </a>
+        <a href="{% url 'events:detail' event.id %}" class="btn btn-default btn-lg">Back to Event</a>
+    </div>
+</div>
+
+{% if can_edit %}
+<form method="post" action="">
+    {% csrf_token %}
+    {{ formset.management_form }}
+
+    <div class="panel panel-primary">
+        <div class="panel-heading clearfix">
+            <h3 class="panel-title pull-left" style="padding-top: 7.5px;">
+                <span class="glyphicon glyphicon-edit"></span> Document Editor — Sections & Schedule
+            </h3>
+            <div class="pull-right">
+                <button type="submit" name="save" class="btn btn-success">
+                    <span class="glyphicon glyphicon-save"></span> Save Changes
+                </button>
+            </div>
+        </div>
+        <div class="panel-body">
+            <table class="table table-bordered table-striped" valign="top">
+                <thead>
+                    <tr class="active">
+                        <th style="width: 8%;">Order</th>
+                        <th style="width: 25%;">Section Title</th>
+                        <th style="width: 53%;">Section Content (Markdown Supported)</th>
+                        <th style="width: 7%; text-align: center;">Done</th>
+                        <th style="width: 7%; text-align: center;">Delete</th>
+                    </tr>
+                </thead>
+                <tbody id="form_data">
+                    {% for form in formset %}
+                        {% if form.errors %}
+                        <tr class="danger">
+                            <td colspan="5">
+                                {% for field, errors in form.errors.items %}
+                                    <strong>{{ field }}:</strong> {% for e in errors %}{{ e }} {% endfor %}
+                                {% endfor %}
+                            </td>
+                        </tr>
+                        {% endif %}
+                        <tr>
+                            <td>{{ form.id }}{{ form.order }}</td>
+                            <td>{{ form.title }}</td>
+                            <td>{{ form.content }}</td>
+                            <td style="text-align: center; vertical-align: middle;">{{ form.completed }}</td>
+                            <td style="text-align: center; vertical-align: middle;">{{ form.DELETE }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="panel-footer clearfix">
+            <input type="button" class="btn btn-info" value="+ Add New Section" id="add_form">
+            <div class="pull-right">
+                <button type="submit" name="save" class="btn btn-success btn-lg">
+                    <span class="glyphicon glyphicon-save"></span> Save Production Plan
+                </button>
+            </div>
+        </div>
+    </div>
+</form>
+
+{% include "js_formset_add_row.tmpl" %}
+{% with formset.empty_form as form %}
+    <table style="display:none;">
+        <tbody id="empty_form">
+            <tr>
+                <td>{{ form.id }}{{ form.order }}</td>
+                <td>{{ form.title }}</td>
+                <td>{{ form.content }}</td>
+                <td style="text-align: center; vertical-align: middle;">{{ form.completed }}</td>
+                <td style="text-align: center; vertical-align: middle;">{{ form.DELETE }}</td>
+            </tr>
+        </tbody>
+    </table>
+{% endwith %}
+
+{% else %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="alert alert-info">
+            <span class="glyphicon glyphicon-info-sign"></span>
+            You are viewing the production plan in read-only mode.
+        </div>
+        {% for section in plan.sections.all %}
+        <div class="panel panel-default">
+            <div class="panel-heading">
+                <h3 class="panel-title">
+                    {{ section.title }}
+                    {% if section.completed %}
+                        <span class="label label-success pull-right"><span class="glyphicon glyphicon-ok"></span> Complete</span>
+                    {% endif %}
+                </h3>
+            </div>
+            <div class="panel-body">
+                {% if section.content %}
+                    {{ section.content|markdown }}
+                {% else %}
+                    <span class="text-muted">No content provided yet.</span>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}

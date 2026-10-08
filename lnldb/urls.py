@@ -81,3 +81,7 @@ urlpatterns += [
     # This has to be at the end so that it doesn't mask other urls
     re_path(r'^(?P<slug>[-\w]+)/$', view_page, name="page"),
 ]
+
+from django.conf.urls.static import static
+urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
